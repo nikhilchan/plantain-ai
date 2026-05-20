@@ -157,11 +157,9 @@ def lambda_handler(event, context):
             conn = get_db_connection()
             try:
                 with conn.cursor() as cursor:
-                    # 1. Insert the rating
                     sql = "INSERT INTO ratings (user_id, recipe, recipe_summary, user_rating, user_feedback) VALUES (%s, %s, %s, %s, %s)"
                     cursor.execute(sql, (user_id, recipe, summary, rating, feedback))
                     
-                    # 2. HYPERACCURATE PANTRY DEDUCTION LOGIC
                     cursor.execute("SELECT pantry_text, id FROM ingredients WHERE user_id = %s", (user_id,))
                     res = cursor.fetchone()
                     
@@ -169,7 +167,6 @@ def lambda_handler(event, context):
                         current_pantry_text = res[0]
                         pantry_id = res[1]
                         
-                        # System prompt designed specifically to output clean mathematical deductions
                         deduction_prompt = f"""You are a hyper-accurate kitchen inventory calculator.
 The user just cooked this recipe:
 {recipe}
@@ -185,7 +182,6 @@ RULES:
 4. DO NOT deduct items with quantity "infinite" or unit "staple" (like oils, salt, pepper).
 5. Output ONLY valid JSON in this exact format: {{"deductions": [{{"name": "exact pantry item name", "quantity_to_subtract": 100}}]}}"""
 
-                        # Run the stealth calculation
                         ai_response = openai_client.chat.completions.create(
                             model="gpt-4.1-nano", 
                             response_format={ "type": "json_object" },
@@ -195,7 +191,6 @@ RULES:
                         deductions_data = json.loads(ai_response.choices[0].message.content)
                         deductions = deductions_data.get('deductions', [])
                         
-                        # Apply the math to the current pantry state
                         pantry_list = json.loads(current_pantry_text)
                         for deduction in deductions:
                             d_name = deduction.get('name')
@@ -206,10 +201,8 @@ RULES:
                                     item['quantity'] = max(0, item.get('quantity', 0) - d_qty)
                                     break
                         
-                        # Filter out empty items
                         pantry_list = [p for p in pantry_list if str(p.get('quantity')) == 'infinite' or p.get('quantity', 0) > 0]
                         
-                        # Save the freshly updated pantry
                         cursor.execute("UPDATE ingredients SET pantry_text = %s WHERE id = %s", (json.dumps(pantry_list), pantry_id))
 
                     conn.commit()
