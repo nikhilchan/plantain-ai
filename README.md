@@ -54,11 +54,3 @@ Because this project relies heavily on AWS infrastructure, local setup requires 
    * In `index.html`, update the `poolData` with your Cognito credentials.
    * Update the `API_ENDPOINT` variable with your API Gateway URL.
 5. **Hosting:** Upload `index.html` to a public-facing AWS S3 Bucket!
-
-## 💡 Future Roadmap
-
-* Image recognition (upload a picture of a grocery receipt to automatically add to pantry).
-* Meal planning and automatic grocery list generation.
-* User-to-user recipe sharing.
-
-*Built to cure the "What's for dinner?" dilemma.*
