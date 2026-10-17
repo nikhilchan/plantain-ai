@@ -220,6 +220,19 @@ RULES:
                 conn.close()
             return {'statusCode': 200, 'headers': cors_headers, 'body': json.dumps({'status': 'success'})}
 
+        if action == 'feedback':
+            feedback_text = (body.get('feedback') or '').strip()
+            if not feedback_text:
+                return {'statusCode': 400, 'headers': cors_headers, 'body': json.dumps({'error': "Feedback text is required."})}
+            conn = get_db_connection()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("INSERT INTO feedback (user_id, feedback_text) VALUES (%s, %s)", (user_id, feedback_text))
+                    conn.commit()
+            finally:
+                conn.close()
+            return {'statusCode': 200, 'headers': cors_headers, 'body': json.dumps({'status': 'success'})}
+
         user_prompt = body.get('message')
         if not user_prompt:
              return {'statusCode': 400, 'headers': cors_headers, 'body': json.dumps({'error': "Message is required."})}

@@ -149,7 +149,7 @@
                 <p class="text-gray-500 mb-4 text-sm">Have an idea or found a bug? We'd love to hear from you!</p>
                 <form id="feedback-form-modal" class="space-y-4">
                     <textarea id="feedback-input-modal" class="w-full h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-orange-400 transition-all" placeholder="Your feedback..."></textarea>
-                    <button type="submit" class="w-full bg-orange-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-orange-600 transition-all active:scale-95">Send to Team</button>
+                    <button type="submit" class="w-full bg-orange-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-orange-600 transition-all active:scale-95">Send</button>
                 </form>
             </div>
             <div id="feedback-success-view" class="hidden text-center py-6">
@@ -198,7 +198,6 @@
             // --- 1. CONFIGURATION ---
             const poolData = { UserPoolId: 'us-east-2_qqcQQarID', ClientId: '68a9vo755bfjr620hqv9voefhs', region: 'us-east-2' };
             const API_ENDPOINT = 'https://yg4ihpj1kj.execute-api.us-east-2.amazonaws.com/Prod/chat';
-            const FEEDBACK_API_ENDPOINT = 'https://5uq8s490yj.execute-api.us-east-2.amazonaws.com/Prod/'; 
             
             const userPool = new AmazonCognitoIdentity.CognitoUserPool(poolData);
             let cognitoUser;
@@ -540,11 +539,14 @@
             
             document.getElementById('feedback-form-modal').addEventListener('submit', async (e) => {
                 e.preventDefault();
+                const input = document.getElementById('feedback-input-modal');
+                if (!input.value.trim()) return;
                 try {
-                    await makeApiRequest({ action: 'feedback', text: document.getElementById('feedback-input-modal').value });
+                    await makeApiRequest({ action: 'feedback', feedback: input.value.trim() });
+                    input.value = '';
                     document.getElementById('feedback-form-view').classList.add('hidden');
                     document.getElementById('feedback-success-view').classList.remove('hidden');
-                } catch(e) {}
+                } catch(err) { showError("Failed to send feedback."); }
             });
 
             document.getElementById('how-it-works-btn').addEventListener('click', () => toggleModal(document.getElementById('how-it-works-modal'), true));
