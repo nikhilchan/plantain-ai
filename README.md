@@ -6,7 +6,7 @@ Plantain is an intelligent, AI-powered kitchen assistant that takes the mental l
 
 * **Interactive Pantry Management:** The AI analyzes your chat and generates a categorized, interactive pantry widget.
   * Easily adjust quantities with `+` and `-` buttons that instantly sync with the backend.
-  * **Infinite Staples:** Items like salt, pepper, and olive oil are tracked as "infinite" so the AI knows you always have them on hand.
+  * **Assumed Staples:** Salt, pepper, cooking oils, and water are always assumed to be on hand, so they're never tracked or shown in the pantry.
 
 * **Smart Recipe Generation:** Ask for a meal, and Plantain will generate a recipe formatted beautifully in Markdown, complete with a one-click "Copy" button.
 

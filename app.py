@@ -29,17 +29,30 @@ def get_db_connection():
         logger.error("FATAL: Could not connect to MySQL instance.", exc_info=True)
         raise e
 
+# Always assumed on hand: never stored in, shown in, or deducted from the pantry.
+STAPLES = {"salt", "pepper", "black pepper", "olive oil", "vegetable oil", "cooking oil", "water"}
+
+def clean_pantry(pantry_list):
+    # Drops staples (including legacy "infinite" entries) and used-up items.
+    return [p for p in pantry_list
+            if str(p.get('name', '')).lower() not in STAPLES
+            and isinstance(p.get('quantity'), (int, float)) and p['quantity'] > 0]
+
 def edit_pantry(user_id, ingredients):
     conn = get_db_connection()
     try:
         with conn.cursor() as cursor:
             cursor.execute("SELECT pantry_text, id FROM ingredients WHERE user_id = %s", (user_id,))
             result = cursor.fetchone()
-            pantry_list = json.loads(result[0]) if result and result[0] else []
+            pantry_list = clean_pantry(json.loads(result[0])) if result and result[0] else []
             pantry_id = result[1] if result else None
-            
+
+            skipped_staples = []
             for item in ingredients:
                 name = item['name'].lower()
+                if name in STAPLES:
+                    skipped_staples.append(name)
+                    continue
                 quantity = item['quantity']
                 unit = item['unit']
                 action = item['action']
@@ -49,20 +62,16 @@ def edit_pantry(user_id, ingredients):
                 for pantry_item in pantry_list:
                     if pantry_item.get('name') == name and pantry_item.get('unit') == unit:
                         if action == 'add':
-                            if pantry_item.get('quantity') != 'infinite':
-                                pantry_item['quantity'] = pantry_item.get('quantity', 0) + quantity
+                            pantry_item['quantity'] += quantity
                         elif action == 'remove':
-                            if pantry_item.get('quantity') != 'infinite':
-                                pantry_item['quantity'] = max(0, pantry_item.get('quantity', 0) - quantity)
-                            else:
-                                pantry_item['quantity'] = 0 # Force remove infinite items
+                            pantry_item['quantity'] = max(0, pantry_item['quantity'] - quantity)
                         found = True
                         break
-                
+
                 if not found and action == 'add':
                     pantry_list.append({"name": name, "quantity": quantity, "unit": unit, "category": category})
 
-            updated_pantry = [p for p in pantry_list if str(p.get('quantity')) == 'infinite' or p.get('quantity', 0) > 0]
+            updated_pantry = clean_pantry(pantry_list)
             new_pantry_json = json.dumps(updated_pantry)
             
             if pantry_id:
@@ -71,6 +80,8 @@ def edit_pantry(user_id, ingredients):
                 cursor.execute("INSERT INTO ingredients (user_id, pantry_text) VALUES (%s, %s)", (user_id, new_pantry_json))
             
             conn.commit()
+            if skipped_staples:
+                return f"Pantry successfully updated. Not tracked (staples are always assumed on hand): {', '.join(skipped_staples)}."
             return "Pantry successfully updated."
     finally:
         conn.close()
@@ -81,7 +92,7 @@ def inquire_pantry(user_id):
         with conn.cursor() as cursor:
             cursor.execute("SELECT pantry_text, food_preferences FROM ingredients WHERE user_id = %s", (user_id,))
             result = cursor.fetchone()
-            pantry_contents = result[0] if result and result[0] else "[]"
+            pantry_contents = json.dumps(clean_pantry(json.loads(result[0]))) if result and result[0] else "[]"
             food_preferences = result[1] if result and result[1] else "none"
             return json.dumps({"pantry": pantry_contents, "preferences": food_preferences})
     finally:
@@ -134,15 +145,12 @@ def lambda_handler(event, context):
                     cursor.execute("SELECT pantry_text, id FROM ingredients WHERE user_id = %s", (user_id,))
                     res = cursor.fetchone()
                     if res and res[0]:
-                        pantry_list = json.loads(res[0])
+                        pantry_list = clean_pantry(json.loads(res[0]))
                         for item in pantry_list:
                             if item.get('name') == item_name:
-                                if change == 'remove':
-                                    item['quantity'] = 0
-                                elif str(item.get('quantity')) != 'infinite':
-                                    item['quantity'] = max(0, item.get('quantity', 0) + int(change))
+                                item['quantity'] = max(0, item['quantity'] + int(change))
                                 break
-                        pantry_list = [p for p in pantry_list if str(p.get('quantity')) == 'infinite' or p.get('quantity', 0) > 0]
+                        pantry_list = clean_pantry(pantry_list)
                         cursor.execute("UPDATE ingredients SET pantry_text = %s WHERE id = %s", (json.dumps(pantry_list), res[1]))
                         conn.commit()
             finally:
@@ -164,7 +172,7 @@ def lambda_handler(event, context):
                     res = cursor.fetchone()
                     
                     if res and res[0] and recipe:
-                        current_pantry_text = res[0]
+                        current_pantry_text = json.dumps(clean_pantry(json.loads(res[0])))
                         pantry_id = res[1]
                         
                         deduction_prompt = f"""You are a hyper-accurate kitchen inventory calculator.
@@ -179,7 +187,7 @@ RULES:
 1. Match the exact 'name' from the current pantry JSON.
 2. Convert recipe measurements to match the exact 'unit' in the pantry (e.g., if recipe uses '1 cup milk' and pantry has 'ml', estimate and output 240).
 3. If the recipe uses something like "1 medium onion" and the pantry tracks onions by "count", deduct 1.
-4. DO NOT deduct items with quantity "infinite" or unit "staple" (like oils, salt, pepper).
+4. Only deduct items that appear in the pantry JSON. Ignore recipe ingredients that are not in it (e.g. salt, pepper, oil).
 5. Output ONLY valid JSON in this exact format: {{"deductions": [{{"name": "exact pantry item name", "quantity_to_subtract": 100}}]}}"""
 
                         ai_response = openai_client.chat.completions.create(
@@ -195,13 +203,13 @@ RULES:
                         for deduction in deductions:
                             d_name = deduction.get('name')
                             d_qty = deduction.get('quantity_to_subtract', 0)
-                            
+
                             for item in pantry_list:
-                                if item.get('name') == d_name and str(item.get('quantity')) != 'infinite':
-                                    item['quantity'] = max(0, item.get('quantity', 0) - d_qty)
+                                if item.get('name') == d_name:
+                                    item['quantity'] = max(0, item['quantity'] - d_qty)
                                     break
-                        
-                        pantry_list = [p for p in pantry_list if str(p.get('quantity')) == 'infinite' or p.get('quantity', 0) > 0]
+
+                        pantry_list = clean_pantry(pantry_list)
                         
                         cursor.execute("UPDATE ingredients SET pantry_text = %s WHERE id = %s", (json.dumps(pantry_list), pantry_id))
 
@@ -237,12 +245,12 @@ Our interface automatically generates beautiful UI widgets ONLY if you format yo
    - YOU MUST NOT use a bulleted list (e.g., "- item").
    - DO NOT add conversational text before or after the JSON block (e.g. Do not say "Here is your pantry:"). Just output the JSON block.
    - Assign ONE of these categories to every item: "Produce", "Proteins", "Grains", "Dairy", "Spices/Oils", "Other".
-   - For staples (like oils, salt, pepper, condiments), set `quantity` to the exact string `"infinite"` and `unit` to `"staple"`.
+   - Only list items returned by `inquire_pantry`. Never list staples (see below).
    Example EXACT output:
    ```pantry
    [
      {"name": "chicken breast", "quantity": 2, "unit": "count", "category": "Proteins"},
-     {"name": "olive oil", "quantity": "infinite", "unit": "staple", "category": "Spices/Oils"}
+     {"name": "rice", "quantity": 500, "unit": "g", "category": "Grains"}
    ]
    ```
 
@@ -264,7 +272,10 @@ Our interface automatically generates beautiful UI widgets ONLY if you format yo
 **General Guidelines:**
 - Update preferences first if asked.
 - Inquire pantry to check ingredients before suggesting recipes.
-- Only suggest recipes using ingredients they actually have + common household staples. Convert imperial to metric.
+- Only suggest recipes using ingredients they actually have + the staples below. Convert imperial to metric.
+
+**Staples:** The user always has these, and they are not tracked in the pantry: """ + ", ".join(sorted(STAPLES)) + """.
+- Use them freely in recipes. Never add them with `edit_pantry` or show them in the pantry widget.
 """
         
         messages = [{"role": "system", "content": system_prompt}] + chat_history + [{"role": "user", "content": user_prompt}]
@@ -282,7 +293,7 @@ Before calling this tool, you must ensure every ingredient has a specific numeri
 1. If the user uses vague terms (e.g., "some," "a few," "a can," "a bag," "a bunch"), **DO NOT call this tool.** 2. Instead, ask the user to clarify those specific items (e.g., "How many grams are in that can?").
 3. Only invoke this tool once you have precise data for every item requested.
 
-**Staples:** For common oils and seasonings, use quantity `0` and unit `staple` to mark them as infinite.
+**Staples:** Do not include staples (""" + ", ".join(sorted(STAPLES)) + """); they are always assumed on hand.
 **Metric Conversion:** Convert all non-metric weight/volume (lbs, oz, cups) to 'g' or 'ml' before calling.""",
                     "parameters": {
                         "type": "object",
@@ -294,8 +305,8 @@ Before calling this tool, you must ensure every ingredient has a specific numeri
                                     "type": "object",
                                     "properties": {
                                         "name": {"type": "string", "description": "The name of the ingredient (e.g., 'onion')."},
-                                        "quantity": {"type": "number", "description": "The numerical amount. Use 0 for infinite staples."},
-                                        "unit": {"type": "string", "enum": ["count", "g", "ml", "staple"], "description": "The unit of measurement."},
+                                        "quantity": {"type": "number", "description": "The numerical amount."},
+                                        "unit": {"type": "string", "enum": ["count", "g", "ml"], "description": "The unit of measurement."},
                                         "action": {"type": "string", "enum": ["add", "remove"], "description": "Whether to add to or subtract from the pantry."},
                                         "category": {"type": "string", "enum": ["Produce", "Proteins", "Grains", "Dairy", "Spices/Oils", "Other"], "description": "The food category."}
                                     },

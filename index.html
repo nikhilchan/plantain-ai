@@ -290,11 +290,11 @@
                     const card = btnElement.closest('.pantry-item-card');
                     const qtySpan = card.querySelector('.qty-display');
                     
-                    if(qtySpan && change !== 'remove') {
+                    if(qtySpan) {
                         let cur = parseInt(qtySpan.innerText) || 0;
                         qtySpan.innerText = Math.max(0, cur + change);
                         if (cur + change <= 0) removeCard(card);
-                    } else if (change === 'remove') removeCard(card);
+                    }
                 } catch (error) { showError("Failed to update pantry stock."); } 
                 finally { btnElement.innerHTML = originalHtml; btnElement.disabled = false; }
             };
@@ -323,11 +323,8 @@
                 Object.entries(cats).forEach(([cat, catItems]) => {
                     let html = `<div class="mb-4"><h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 border-b pb-2">${cat}</h4><div class="grid grid-cols-1 sm:grid-cols-2 gap-3">`;
                     catItems.forEach(i => {
-                        const isInf = String(i.quantity) === 'infinite';
                         const safeName = i.name.replace(/'/g, "\\'");
-                        const ctrls = isInf 
-                            ? `<button onclick="updatePantryItem('${safeName}', 'remove', this)" class="text-gray-400 hover:text-red-500 p-2 font-bold">X</button>`
-                            : `<div class="flex items-center bg-gray-50 rounded-lg border border-gray-200">
+                        const ctrls = `<div class="flex items-center bg-gray-50 rounded-lg border border-gray-200">
                                 <button onclick="updatePantryItem('${safeName}', -1, this)" class="px-3 py-1 text-gray-500 hover:bg-gray-200 font-bold">-</button>
                                 <span class="qty-display w-8 text-center text-sm font-bold bg-white py-1 border-x">${i.quantity}</span>
                                 <button onclick="updatePantryItem('${safeName}', 1, this)" class="px-3 py-1 text-gray-500 hover:bg-gray-200 font-bold">+</button>
@@ -335,7 +332,7 @@
                         html += `<div class="pantry-item-card flex items-center justify-between p-3 rounded-2xl border shadow-sm hover:border-orange-200 bg-white group">
                             <div class="flex flex-col pr-3 truncate">
                                 <span class="font-bold text-gray-800 text-sm capitalize truncate">${i.name}</span>
-                                <span class="text-xs text-gray-500">${isInf ? '<span class="text-green-600 font-bold bg-green-50 px-2 rounded-md text-[10px] uppercase">Infinite</span>' : i.unit}</span>
+                                <span class="text-xs text-gray-500">${i.unit}</span>
                             </div>
                             <div class="flex-shrink-0">${ctrls}</div>
                         </div>`;
