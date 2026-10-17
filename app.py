@@ -34,10 +34,28 @@ def get_db_connection():
 STAPLES = {"salt", "pepper", "black pepper", "olive oil", "vegetable oil", "cooking oil", "water"}
 
 def clean_pantry(pantry_list):
-    # Drops staples (including legacy "infinite" entries) and used-up items.
-    return [p for p in pantry_list
-            if str(p.get('name', '')).lower() not in STAPLES
-            and isinstance(p.get('quantity'), (int, float)) and p['quantity'] > 0]
+    # Drops staples (including legacy "infinite" entries) and used-up items; rounds away float noise.
+    cleaned = [p for p in pantry_list
+               if str(p.get('name', '')).lower() not in STAPLES
+               and isinstance(p.get('quantity'), (int, float)) and p['quantity'] > 0]
+    for p in cleaned:
+        p['quantity'] = round(p['quantity'], 2)
+    return cleaned
+
+# Spelling variants collapse to one unit so "1 lb" + "2 lbs" merge. Units are never converted.
+UNIT_ALIASES = {
+    "lbs": "lb", "pound": "lb", "pounds": "lb",
+    "ounce": "oz", "ounces": "oz",
+    "gram": "g", "grams": "g",
+    "kilogram": "kg", "kilograms": "kg", "kgs": "kg",
+    "milliliter": "ml", "milliliters": "ml",
+    "liter": "l", "liters": "l",
+    "cups": "cup", "tablespoon": "tbsp", "tablespoons": "tbsp", "teaspoon": "tsp", "teaspoons": "tsp",
+}
+
+def normalize_unit(unit):
+    unit = str(unit).strip().lower().rstrip('.')
+    return UNIT_ALIASES.get(unit, unit)
 
 def recipe_title(recipe_text):
     # First non-empty line of the recipe Markdown, minus heading/bold markers.
@@ -63,7 +81,7 @@ def edit_pantry(user_id, ingredients):
                     skipped_staples.append(name)
                     continue
                 quantity = item['quantity']
-                unit = item['unit']
+                unit = normalize_unit(item['unit'])
                 action = item['action']
                 category = item.get('category', 'Other')
 
@@ -147,6 +165,7 @@ def lambda_handler(event, context):
 
         if action == 'update_pantry':
             item_name = body.get('name')
+            item_unit = body.get('unit')
             change = body.get('change')
             conn = get_db_connection()
             try:
@@ -156,7 +175,8 @@ def lambda_handler(event, context):
                     if res and res[0]:
                         pantry_list = clean_pantry(json.loads(res[0]))
                         for item in pantry_list:
-                            if item.get('name') == item_name:
+                            # The same ingredient can exist in more than one unit, so match on both.
+                            if item.get('name') == item_name and (item_unit is None or item.get('unit') == item_unit):
                                 item['quantity'] = max(0, item['quantity'] + int(change))
                                 break
                         pantry_list = clean_pantry(pantry_list)
@@ -302,6 +322,7 @@ Our interface automatically generates beautiful UI widgets ONLY if you format yo
    - DO NOT add conversational text before or after the JSON block (e.g. Do not say "Here is your pantry:"). Just output the JSON block.
    - Assign ONE of these categories to every item: "Produce", "Proteins", "Grains", "Dairy", "Spices/Oils", "Other".
    - Only list items returned by `inquire_pantry`. Never list staples (see below).
+   - Copy each item's `quantity` and `unit` exactly as stored. Never convert units (e.g. keep 1 "lb" as 1 "lb").
    Example EXACT output:
    ```pantry
    [
@@ -344,13 +365,14 @@ Our interface automatically generates beautiful UI widgets ONLY if you format yo
                     "description": """Updates the user's pantry inventory. 
 
 **CRITICAL RULE: CLARIFY VAGUE QUANTITIES FIRST.**
-Before calling this tool, you must ensure every ingredient has a specific numerical quantity and a standard unit ('count', 'g', or 'ml'). 
+Before calling this tool, you must ensure every ingredient has a specific numerical quantity and a unit.
 
 1. If the user uses vague terms (e.g., "some," "a few," "a can," "a bag," "a bunch"), **DO NOT call this tool.** 2. Instead, ask the user to clarify those specific items (e.g., "How many grams are in that can?").
 3. Only invoke this tool once you have precise data for every item requested.
 
 **Staples:** Do not include staples (""" + ", ".join(sorted(STAPLES)) + """); they are always assumed on hand.
-**Metric Conversion:** Convert all non-metric weight/volume (lbs, oz, cups) to 'g' or 'ml' before calling.""",
+**Units:** Keep the user's original unit. NEVER convert (e.g. "1 lb chicken breast" is quantity 1, unit "lb", not 454 g). Use short unit names ("lb", "oz", "g", "kg", "ml", "l", "cup", "tbsp", "tsp") and "count" for whole items (e.g. "3 apples").
+**Removing:** When removing an item already in the pantry, use the same unit it is stored in.""",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -362,7 +384,7 @@ Before calling this tool, you must ensure every ingredient has a specific numeri
                                     "properties": {
                                         "name": {"type": "string", "description": "The name of the ingredient (e.g., 'onion')."},
                                         "quantity": {"type": "number", "description": "The numerical amount."},
-                                        "unit": {"type": "string", "enum": ["count", "g", "ml"], "description": "The unit of measurement."},
+                                        "unit": {"type": "string", "description": "The unit exactly as the user gave it, unconverted (e.g. 'lb', 'oz', 'g', 'cup'), or 'count' for whole items."},
                                         "action": {"type": "string", "enum": ["add", "remove"], "description": "Whether to add to or subtract from the pantry."},
                                         "category": {"type": "string", "enum": ["Produce", "Proteins", "Grains", "Dairy", "Spices/Oils", "Other"], "description": "The food category."}
                                     },

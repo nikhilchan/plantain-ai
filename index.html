@@ -40,10 +40,7 @@
                 <p class="text-sm text-gray-500 mt-2 font-medium">Your Personal Kitchen Assistant</p>
 
                 <button id="how-it-works-btn" class="mt-6 text-sm text-gray-600 hover:text-orange-600 flex items-center gap-2 transition-colors">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
-                        <path d="M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zM8 1a8 8 0 1 0 0 16A8 8 0 0 0 8 1z"/>
-                        <path d="m8.93 6.588-2.29.287-.082.38.45.083c.294.055.468.114.558.114.09 0 .162-.055.162-.114s-.072-.114-.162-.114c-.132 0-.28-.055-.45-.114L5.25 6.287l.082-.38c.355-.06.755-.113 1.157-.113.858 0 1.259.38 1.259 1.12 0 .612-.41 1.02-1.112 1.328-.692.301-.932.502-.932.927v.003h1.344v-.003c0-.283.186-.462.533-.635.347-.174.686-.38.686-.808 0-.474-.325-.845-.933-.845-.347 0-.651.06-.927.182zm-1.122 3.865a1 1 0 1 1-2 0 1 1 0 0 1 2 0z"/>
-                    </svg>
+                    <span class="w-4 h-4 rounded-full border-2 border-current flex items-center justify-center text-[10px] font-bold leading-none">?</span>
                     <span>How does this work?</span>
                 </button>
 
@@ -82,7 +79,7 @@
                 <form id="chat-form" class="flex items-center space-x-3 max-w-4xl mx-auto bg-white p-2 rounded-full shadow-lg border border-gray-200">
                     <input type="text" id="chat-input" class="flex-1 w-full px-4 py-2 bg-transparent border-none focus:outline-none focus:ring-0 text-gray-700 placeholder-gray-400" placeholder="Ask Plantain for a recipe or update your pantry...">
                     <button id="submit-button" type="submit" class="inline-flex items-center justify-center p-3 h-11 w-11 rounded-full shadow-sm text-white bg-orange-500 hover:bg-orange-600 focus:outline-none transition-transform active:scale-95 flex-shrink-0">
-                        <svg class="w-5 h-5 ml-0.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M3.105 2.289a.75.75 0 00-.826.95l1.414 4.949a.75.75 0 00.95.826L11.25 9.25v1.5l-7.552 1.154a.75.75 0 00-.95.826l1.414 4.949a.75.75 0 00.95.826l13.5-2.25a.75.75 0 000-1.455l-13.5-2.25a.75.75 0 00-.826-.95z" /></svg>
+                        <svg id="send-icon" class="w-5 h-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M6.5 4.5 L16.5 10 L6.5 15.5 Z" /></svg>
                     </button>
                 </form>
             </div>
@@ -151,7 +148,7 @@
                 <button id="close-feedback-btn" class="text-gray-400 hover:text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-full w-8 h-8 flex items-center justify-center transition-colors">&times;</button>
             </div>
             <div id="feedback-form-view">
-                <p class="text-gray-500 mb-4 text-sm">Have an idea or found a bug? We'd love to hear from you!</p>
+                <p class="text-gray-500 mb-4 text-sm">Have an idea or found a bug? I'd love to hear from you!</p>
                 <form id="feedback-form-modal" class="space-y-4">
                     <textarea id="feedback-input-modal" class="w-full h-32 p-4 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:bg-white focus:ring-2 focus:ring-orange-400 transition-all" placeholder="Your feedback..."></textarea>
                     <button type="submit" class="w-full bg-orange-500 text-white font-bold py-3 px-4 rounded-xl shadow-md hover:bg-orange-600 transition-all active:scale-95">Send</button>
@@ -176,6 +173,7 @@
                     <ul class="space-y-3">
                         <li><span class="text-orange-500 font-bold">•</span> <b>Manage Your Pantry:</b> Tell Plantain what you bought, or manage it directly using the widgets!</li>
                         <li><span class="text-orange-500 font-bold">•</span> <b>Generate Recipes:</b> Ask for recipes based on what you already own.</li>
+                        <li><span class="text-orange-500 font-bold">•</span> <b>Rate &amp; Save Recipes:</b> Rate a recipe after you cook it and Plantain will deduct the ingredients from your pantry. Tap the heart to save it to My Favorites.</li>
                         <li><span class="text-orange-500 font-bold">•</span> <b>Save Preferences:</b> Inform Plantain of any dietary restrictions or allergies.</li>
                     </ul>
                 </div>
@@ -230,6 +228,7 @@
             const chatWindow = document.getElementById('chat-window');
             const chatInput = document.getElementById('chat-input');
             const submitButton = document.getElementById('submit-button');
+            const sendIcon = document.getElementById('send-icon');
 
             marked.setOptions({ breaks: true, gfm: true });
 
@@ -294,20 +293,20 @@
                 return segments;
             }
 
-            window.updatePantryItem = async function(name, change, btnElement) {
+            window.updatePantryItem = async function(name, unit, change, btnElement) {
                 const originalHtml = btnElement.innerHTML;
                 btnElement.innerHTML = `...`;
                 btnElement.disabled = true;
 
                 try {
-                    await makeApiRequest({ action: 'update_pantry', name: name, change: change });
+                    await makeApiRequest({ action: 'update_pantry', name: name, unit: unit, change: change });
                     const card = btnElement.closest('.pantry-item-card');
                     const qtySpan = card.querySelector('.qty-display');
-                    
+
                     if(qtySpan) {
-                        let cur = parseInt(qtySpan.innerText) || 0;
-                        qtySpan.innerText = Math.max(0, cur + change);
-                        if (cur + change <= 0) removeCard(card);
+                        const next = Math.round(((parseFloat(qtySpan.innerText) || 0) + change) * 100) / 100;
+                        qtySpan.innerText = Math.max(0, next);
+                        if (next <= 0) removeCard(card);
                     }
                 } catch (error) { showError("Failed to update pantry stock."); } 
                 finally { btnElement.innerHTML = originalHtml; btnElement.disabled = false; }
@@ -338,10 +337,11 @@
                     let html = `<div class="mb-4"><h4 class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3 border-b pb-2">${cat}</h4><div class="grid grid-cols-1 sm:grid-cols-2 gap-3">`;
                     catItems.forEach(i => {
                         const safeName = i.name.replace(/'/g, "\\'");
+                        const safeUnit = String(i.unit).replace(/'/g, "\\'");
                         const ctrls = `<div class="flex items-center bg-gray-50 rounded-lg border border-gray-200">
-                                <button onclick="updatePantryItem('${safeName}', -1, this)" class="px-3 py-1 text-gray-500 hover:bg-gray-200 font-bold">-</button>
-                                <span class="qty-display w-8 text-center text-sm font-bold bg-white py-1 border-x">${i.quantity}</span>
-                                <button onclick="updatePantryItem('${safeName}', 1, this)" class="px-3 py-1 text-gray-500 hover:bg-gray-200 font-bold">+</button>
+                                <button onclick="updatePantryItem('${safeName}', '${safeUnit}', -1, this)" class="px-3 py-1 text-gray-500 hover:bg-gray-200 font-bold">-</button>
+                                <span class="qty-display min-w-[2rem] px-1 text-center text-sm font-bold bg-white py-1 border-x">${i.quantity}</span>
+                                <button onclick="updatePantryItem('${safeName}', '${safeUnit}', 1, this)" class="px-3 py-1 text-gray-500 hover:bg-gray-200 font-bold">+</button>
                                </div>`;
                         html += `<div class="pantry-item-card flex items-center justify-between p-3 rounded-2xl border shadow-sm hover:border-orange-200 bg-white group">
                             <div class="flex flex-col pr-3 truncate">
@@ -525,12 +525,13 @@
                 addChatMessage('You', msg);
                 chatInput.value = '';
                 submitButton.disabled = true;
-                
+                sendIcon.classList.add('animate-spin');
+
                 try {
                     const res = await makeApiRequest({ message: msg });
                     addChatMessage('Plantain', res.response);
-                } catch (err) { addChatMessage('Error', "I'm having trouble connecting to the kitchen."); } 
-                finally { submitButton.disabled = false; }
+                } catch (err) { addChatMessage('Error', "I'm having trouble connecting to the kitchen."); }
+                finally { submitButton.disabled = false; sendIcon.classList.remove('animate-spin'); }
             });
 
             async function submitRatingFlow(feedback) {
