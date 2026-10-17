@@ -1,3 +1,4 @@
+import hashlib
 import json
 import logging
 import os
@@ -37,6 +38,14 @@ def clean_pantry(pantry_list):
     return [p for p in pantry_list
             if str(p.get('name', '')).lower() not in STAPLES
             and isinstance(p.get('quantity'), (int, float)) and p['quantity'] > 0]
+
+def recipe_title(recipe_text):
+    # First non-empty line of the recipe Markdown, minus heading/bold markers.
+    for line in recipe_text.splitlines():
+        line = line.strip().lstrip('#').strip().strip('*').strip()
+        if line:
+            return line[:255]
+    return "Untitled Recipe"
 
 def edit_pantry(user_id, ingredients):
     conn = get_db_connection()
@@ -232,6 +241,40 @@ RULES:
             finally:
                 conn.close()
             return {'statusCode': 200, 'headers': cors_headers, 'body': json.dumps({'status': 'success'})}
+
+        if action == 'set_favorite':
+            recipe = (body.get('recipe') or '').strip()
+            if not recipe:
+                return {'statusCode': 400, 'headers': cors_headers, 'body': json.dumps({'error': "Recipe is required."})}
+            favorited = bool(body.get('favorited'))
+            recipe_hash = hashlib.sha256(recipe.encode('utf-8')).hexdigest()
+            conn = get_db_connection()
+            try:
+                with conn.cursor() as cursor:
+                    if favorited:
+                        cursor.execute(
+                            "INSERT INTO favorites (user_id, title, recipe_text, recipe_hash) VALUES (%s, %s, %s, %s) "
+                            "ON DUPLICATE KEY UPDATE id = id",
+                            (user_id, recipe_title(recipe), recipe, recipe_hash))
+                    else:
+                        cursor.execute("DELETE FROM favorites WHERE user_id = %s AND recipe_hash = %s", (user_id, recipe_hash))
+                    conn.commit()
+            finally:
+                conn.close()
+            return {'statusCode': 200, 'headers': cors_headers, 'body': json.dumps({'favorited': favorited})}
+
+        if action == 'list_favorites':
+            conn = get_db_connection()
+            try:
+                with conn.cursor() as cursor:
+                    cursor.execute("SELECT id, title, recipe_text, created_at FROM favorites WHERE user_id = %s ORDER BY created_at DESC", (user_id,))
+                    favorites = [
+                        {'id': r[0], 'title': r[1], 'recipe': r[2], 'created_at': r[3].isoformat() if r[3] else None}
+                        for r in cursor.fetchall()
+                    ]
+            finally:
+                conn.close()
+            return {'statusCode': 200, 'headers': cors_headers, 'body': json.dumps({'favorites': favorites})}
 
         user_prompt = body.get('message')
         if not user_prompt:
