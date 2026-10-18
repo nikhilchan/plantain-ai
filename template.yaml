@@ -9,6 +9,7 @@ Globals:
     MemorySize: 256
 
 Resources:
+  # User accounts (email + password, email verification).
   CognitoUserPool:
     Type: AWS::Cognito::UserPool
     Properties:
@@ -24,6 +25,7 @@ Resources:
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: false
 
+  # The browser app's client (public, so no client secret).
   CognitoUserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
@@ -31,6 +33,7 @@ Resources:
       ClientName: plantain-ai-frontend
       GenerateSecret: false
 
+  # API Gateway; requests must carry a valid Cognito ID token unless overridden per route.
   ChatApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -41,6 +44,8 @@ Resources:
           CognitoAuthorizer:
             UserPoolArn: !GetAtt CognitoUserPool.Arn
 
+  # The single backend Lambda (app.py). DB and OpenAI credentials are set as
+  # environment variables in the Lambda console, not in this template.
   ChatFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -56,6 +61,7 @@ Resources:
             RestApiId: !Ref ChatApi
             Auth:
               Authorizer: CognitoAuthorizer
+        # Browsers send CORS preflight requests without a token, so this route is public.
         OptionsEvent:
           Type: Api
           Properties:
